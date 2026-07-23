@@ -1,0 +1,81 @@
+name: Claude code review (reusable)
+
+# Central reusable PR-review workflow for FB-QA repos. Callers reference it as
+#   uses: FB-QA/workflows/.github/workflows/claude-code-review.yml@main
+# so the review logic lives once, here; an edit reaches every caller on its next PR.
+# This file contains NO secrets — each caller passes its own CLAUDE_CODE_OAUTH_TOKEN.
+#
+# Per-repo setup (cannot be automated): install the Claude GitHub App and add the
+# repo secret CLAUDE_CODE_OAUTH_TOKEN (`claude setup-token`).
+
+on:
+  workflow_call:
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        description: Claude subscription OAuth token, passed from the caller.
+        required: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    # Skip drafts — a review of unfinished work is just an echo.
+    if: github.event.pull_request.draft == false
+    # Least-privilege: contents:read means the reviewer can read and comment, never
+    # commit. pull-requests/issues:write only post the review and its reactions.
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+      id-token: write # the action mints its App token via OIDC; without this it dies early
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # full history: a review that cannot see the base is guessing
+          # Don't leave the checkout token in .git/config — the agent has a Read tool and
+          # reads PR-controlled text, so a persisted write-scoped token is exfiltratable.
+          persist-credentials: false
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
+          plugins: "code-review@claude-code-plugins"
+          # Lead with the review command — the action's auto-run keys on the prompt
+          # starting with it. The reporting rules follow. The static-review rule is
+          # load-bearing: without it the review burns its turn budget being denied build
+          # commands after it has already posted.
+          prompt: |
+            /code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+
+            How to run and report this review:
+
+            - FIRST, before reviewing, mark it in progress: add an 👀 (eyes) reaction
+              to the PR description (best-effort — carry on if it fails):
+                gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions -f content=eyes
+
+            - Post EVERY finding as an INLINE review comment anchored to the exact
+              file and line it concerns, using the create_inline_comment tool. Do NOT
+              gather findings into one summary comment; the tracking comment carries only
+              a one-line overview and the inline-finding count.
+
+            - Review statically. Do NOT run package-manager or build commands
+              (npm/pnpm/tsc/eslint/vitest/playwright) — you will be denied, and the
+              retries will exhaust your turn budget before you can post. The typecheck,
+              lint and test gates run separately in ci.yml; read its result rather than
+              reproducing it.
+
+            - LAST, once the review is posted, mark it done: add a 👍 (+1) reaction to
+              the PR description and remove the 👀 reaction you added (best-effort):
+                gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions -f content=+1
+                EID=$(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions --jq 'map(select(.content=="eyes" and .user.login=="claude[bot]"))[0].id // empty')
+                [ -n "$EID" ] && gh api --method DELETE repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions/$EID || true
+          track_progress: true
+          # Agent mode grants NO tools by default and nobody can approve prompts on a
+          # runner. Grant READ-ONLY tools only — the reviewer reads and comments, it does
+          # not change code (contents: read). git/gh are per-subcommand, never wildcarded
+          # (`git:*`/`gh:*` shell out via aliases). Only the code-review plugin's real
+          # needs are allowed: gh pr/issue reads + git history for the diff; findings post
+          # via MCP tools; gh api is limited to this PR's reactions endpoint.
+          claude_args: >-
+            --max-turns 40
+            --allowedTools "Read,Grep,Glob,LS,Task,TodoWrite,mcp__github_inline_comment__create_inline_comment,mcp__github_comment__update_claude_comment,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git cat-file:*),Bash(git blame:*),Bash(git diff-tree:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*),Bash(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions:*),Bash(gh api --method DELETE repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions/:*)"
