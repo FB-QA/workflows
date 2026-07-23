@@ -31,9 +31,13 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0 # full history: a review that cannot see the base is guessing
-          # Don't leave the checkout token in .git/config — the agent has a Read tool and
-          # reads PR-controlled text, so a persisted write-scoped token is exfiltratable.
-          persist-credentials: false
+          # NB: persist-credentials MUST stay at its default (true). claude-code-action
+          # runs its own `git fetch origin` internally, which needs the credential in
+          # .git/config; `persist-credentials: false` makes that fetch fail with exit 1 on
+          # a private repo. The trade-off is that the (contents:read + PR-write) token then
+          # sits in .git/config where the agent's Read tool could reach it — an accepted
+          # residual on these PRIVATE repos with trusted authors (no injection author). If
+          # a repo ever takes untrusted external PRs, switch to hosted Code Review.
 
       - uses: anthropics/claude-code-action@v1
         with:
