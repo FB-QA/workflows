@@ -45,11 +45,13 @@ jobs:
           plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
           plugins: "code-review@claude-code-plugins"
           # Lead with the review command — the action's auto-run keys on the prompt
-          # starting with it. The reporting rules follow. The static-review rule is
-          # load-bearing: without it the review burns its turn budget being denied build
-          # commands after it has already posted.
+          # starting with it. `--comment` matters: the upstream plugin's step 7 stops
+          # before posting without it, so leaving it off means posting happens only
+          # because these rules outrank the plugin. The reporting rules follow. The
+          # static-review rule is load-bearing: without it the review burns its turn
+          # budget being denied build commands after it has already posted.
           prompt: |
-            /code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+            /code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }} --comment
 
             How to run and report this review:
 
@@ -57,16 +59,65 @@ jobs:
               to the PR description (best-effort — carry on if it fails):
                 gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions -f content=eyes
 
+            - DEDUPE BEFORE YOU POST. A push is not a fresh PR. List what you have
+              already said on this one:
+                gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments --jq '.[] | select(.user.login == "claude[bot]") | "\(.path):\(.line)"'
+              Do not re-flag any file:line in that list — not reworded, not regraded,
+              not under a different heading. Inline findings accumulate across every
+              push and are never resolved, so a repeat is pure noise in a thread the
+              author cannot prune.
+
             - Post EVERY finding as an INLINE review comment anchored to the exact
               file and line it concerns, using the create_inline_comment tool. Do NOT
-              gather findings into one summary comment; the tracking comment carries only
-              a one-line overview and the inline-finding count.
+              gather findings into one summary comment.
+
+            - SEVERITY IS A FIXED SCALE. Grade every finding as exactly one of:
+                P1 — a real user hits this and something breaks
+                P2 — produces the wrong result under plausible conditions
+                P3 — worth knowing, not worth blocking the merge
+              Never invent a label: no "Correctness:", "Efficiency:", "Cleanup:",
+              "Test gap:", "Minor:". A scale that moves between runs cannot be triaged.
+
+            - EVERY inline comment has exactly this shape, in this order, and nothing
+              else:
+
+                **P<n> · <plain-English headline, 10 words max>** — `file.ext:line`
+
+                <One or two sentences saying what someone using the app would see go
+                wrong. Written for a reader who does not code: no identifiers, no CSS
+                properties, no type or function names. If you cannot explain it without
+                them, describe what the user experiences instead.>
+
+                **Fix:** <one sentence — technical, concrete, actionable>
+
+                <details><summary>Technical detail</summary>
+
+                <The full analysis: evidence, line references, reasoning, git history,
+                CLAUDE.md citations, suggested code, committable suggestion block if the
+                fix is small and complete. Uncapped — put ALL of it here.>
+
+                </details>
+
+              Everything ABOVE the <details> line is capped at 60 words in total. Count
+              them. The detail block is uncapped, so nothing is lost — it is folded.
+              The lede is for deciding whether to care; the fold is for fixing it.
+
+            - CAP: post at most 8 findings, highest severity first. If more survive
+              validation, post those 8 and list the remainder one line each in the
+              tracking comment under a "Not posted" heading.
 
             - Review statically. Do NOT run package-manager or build commands
               (npm/pnpm/tsc/eslint/vitest/playwright) — you will be denied, and the
               retries will exhaust your turn budget before you can post. The typecheck,
               lint and test gates run separately in ci.yml; read its result rather than
               reproducing it.
+
+            - Beyond the checklist the action maintains for you, the tracking comment
+              carries ONE line: counts by severity, e.g. "3 findings — 1 P1, 2 P2."
+              Plus the "Not posted" list if the cap bit. Do not restate the findings,
+              do not summarise the diff, do not narrate what you read. If nothing
+              survives validation: "No issues found. Checked for bugs and CLAUDE.md
+              compliance."
 
             - LAST, once the review is posted, mark it done: add a 👍 (+1) reaction to
               the PR description and remove the 👀 reaction you added (best-effort):
@@ -79,7 +130,12 @@ jobs:
           # not change code (contents: read). git/gh are per-subcommand, never wildcarded
           # (`git:*`/`gh:*` shell out via aliases). Only the code-review plugin's real
           # needs are allowed: gh pr/issue reads + git history for the diff; findings post
-          # via MCP tools; gh api is limited to this PR's reactions endpoint.
+          # via MCP tools; gh api is limited to this PR's reactions and its own inline
+          # comments (the dedupe read — `gh pr view --comments` returns issue comments,
+          # not review comments, so it cannot serve that). Any command the prompt asks
+          # for MUST have an entry here: on a runner nobody can approve a permission
+          # prompt, so an ungranted command is denied, retried, and eats the turn budget
+          # before anything is posted. tests/check_review_workflow.py enforces the pair.
           claude_args: >-
             --max-turns 40
-            --allowedTools "Read,Grep,Glob,LS,Task,TodoWrite,mcp__github_inline_comment__create_inline_comment,mcp__github_comment__update_claude_comment,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git cat-file:*),Bash(git blame:*),Bash(git diff-tree:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*),Bash(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions:*),Bash(gh api --method DELETE repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions/:*)"
+            --allowedTools "Read,Grep,Glob,LS,Task,TodoWrite,mcp__github_inline_comment__create_inline_comment,mcp__github_comment__update_claude_comment,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git cat-file:*),Bash(git blame:*),Bash(git diff-tree:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*),Bash(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments:*),Bash(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions:*),Bash(gh api --method DELETE repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions/:*)"

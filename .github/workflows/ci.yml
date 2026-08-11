@@ -1,0 +1,34 @@
+name: CI
+
+# Guards the reusable review workflow. Nothing here is optional: an edit to the
+# review prompt that asks for an ungranted command fails silently on a runner, so
+# the pairing between prompt and --allowedTools is checked mechanically, not by eye.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Review-workflow contract
+        run: python3 tests/check_review_workflow.py
+
+      - name: Workflow YAML parses
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 - <<'PY'
+          import pathlib, sys, yaml
+          for path in sorted(pathlib.Path(".github/workflows").glob("*.yml")):
+              try:
+                  yaml.safe_load(path.read_text())
+              except yaml.YAMLError as error:
+                  sys.exit(f"{path}: {error}")
+              print(f"OK {path}")
+          PY
