@@ -69,8 +69,19 @@ things that fail *silently* in production:
    `--allowedTools` entry. On a runner nobody can approve a permission prompt, so an
    ungranted command is denied, retried, and exhausts the turn budget before anything
    is posted — the instruction reads fine and does nothing.
-2. The output contract above is still present. Remove any part of it and the reviewer
+2. No prompted command carries a **shell variable, command substitution, or `&&`/`||`
+   chaining**. An allowlist entry is necessary but not sufficient: the sandbox cannot
+   statically match a command it cannot read, so those are denied however correct the
+   entry looks. This is not hypothetical — run `31489080897` on `FB-QA/bbbk` died at
+   `error_max_turns` with `permission_denials_count: 6`, all of them a reaction-removal
+   line whose allowlist entry was perfect. Check 1 passed it; check 2 exists because of
+   it.
+3. The output contract above is still present. Remove any part of it and the reviewer
    reverts to 200-word forensic prose, which is what it does unconstrained.
+
+Turns are the binding constraint, not tokens. The review fans out to several subagents
+before it posts anything, so anything that wastes turns — a denied command, a tracking
+comment rewritten a dozen times — costs findings, not tidiness. `--max-turns` is 60.
 
 CI runs it on every push and PR to this repo.
 

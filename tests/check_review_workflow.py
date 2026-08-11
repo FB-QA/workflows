@@ -90,6 +90,34 @@ def main() -> int:
             "— it will be DENIED on the runner and burn the turn budget",
         )
 
+    # 1b. An allowlist entry is necessary but NOT sufficient. The sandbox will not
+    # prefix-match a command it cannot read statically, so shell variables, command
+    # substitution and && / || chaining defeat the grant even when the entry is
+    # textually correct. Run 31489080897 on FB-QA/bbbk died at error_max_turns with
+    # permission_denials_count 6, every one of them the reaction-removal line
+    # (`[ -n "$EID" ] && gh api --method DELETE .../reactions/$EID || true`) whose
+    # allowlist entry looked perfect. Check 1 passed it. This is why 1b exists.
+    for line in prompt.splitlines():
+        stripped = line.strip()
+        if not re.match(r"^(?:\S+=)?\$?\(?\s*(?:gh|git)\b", stripped) and "gh " not in stripped:
+            continue
+        if not re.search(r"\b(?:gh|git)\s+(?:api|pr|issue|search|diff|log|show|blame)\b", stripped):
+            continue
+        for pattern, label in (
+            (r"\$\{?[A-Za-z_]", "a shell variable"),
+            (r"\$\(", "command substitution"),
+            (r"&&|\|\|", "&& / || chaining"),
+        ):
+            # GitHub Actions expressions are substituted before the shell ever sees
+            # them, so they are static from the sandbox's point of view.
+            probe = re.sub(r"\$\{\{.*?\}\}", "X", stripped)
+            check(
+                re.search(pattern, probe) is None,
+                f"prompt line `{stripped[:80]}` uses {label}; the sandbox cannot "
+                "statically match that against --allowedTools and will DENY it, "
+                "however correct the entry looks",
+            )
+
     # 2. The output contract. Each of these is load-bearing; see module docstring.
     check("--comment" in prompt, "the review command must pass --comment, or the "
           "upstream plugin's step 7 stops before posting anything")

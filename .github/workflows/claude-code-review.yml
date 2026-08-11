@@ -119,11 +119,19 @@ jobs:
               survives validation: "No issues found. Checked for bugs and CLAUDE.md
               compliance."
 
-            - LAST, once the review is posted, mark it done: add a 👍 (+1) reaction to
-              the PR description and remove the 👀 reaction you added (best-effort):
+            - Update the tracking comment at most TWICE: once at the start, once at
+              the end. Every rewrite costs a turn, and turns are the binding
+              constraint here — a run that rewrites its checklist a dozen times dies
+              at max-turns having posted nothing.
+
+            - LAST, once the review is posted, mark it done by adding a 👍 (+1)
+              reaction to the PR description (best-effort — carry on if it fails):
                 gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions -f content=+1
-                EID=$(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions --jq 'map(select(.content=="eyes" and .user.login=="claude[bot]"))[0].id // empty')
-                [ -n "$EID" ] && gh api --method DELETE repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions/$EID || true
+              Leave the 👀 in place. Do NOT try to remove it and do NOT look up its
+              id: the removal needs the id in a shell variable, the sandbox cannot
+              statically match a command containing one against its allowlist, and it
+              is denied every single time. 👀 plus 👍 reads as "reviewed" perfectly
+              well; the tidier single reaction is not worth the turns.
           track_progress: true
           # Agent mode grants NO tools by default and nobody can approve prompts on a
           # runner. Grant READ-ONLY tools only — the reviewer reads and comments, it does
@@ -135,7 +143,16 @@ jobs:
           # not review comments, so it cannot serve that). Any command the prompt asks
           # for MUST have an entry here: on a runner nobody can approve a permission
           # prompt, so an ungranted command is denied, retried, and eats the turn budget
-          # before anything is posted. tests/check_review_workflow.py enforces the pair.
+          # before anything is posted. An entry is necessary but NOT sufficient: the
+          # sandbox cannot statically match a command carrying a shell variable,
+          # command substitution or && / || chaining, so those are denied however
+          # correct the entry looks — which is what killed run 31489080897 on
+          # FB-QA/bbbk. tests/check_review_workflow.py enforces both halves.
+          #
+          # --max-turns was 40, and that run hit the ceiling (with 6 denials burned on
+          # the reaction removal that has since been dropped). The review fans out to
+          # several subagents before it posts anything; 60 leaves headroom so a slow
+          # PR reports its findings instead of dying silently with them.
           claude_args: >-
-            --max-turns 40
-            --allowedTools "Read,Grep,Glob,LS,Task,TodoWrite,mcp__github_inline_comment__create_inline_comment,mcp__github_comment__update_claude_comment,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git cat-file:*),Bash(git blame:*),Bash(git diff-tree:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*),Bash(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments:*),Bash(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions:*),Bash(gh api --method DELETE repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions/:*)"
+            --max-turns 60
+            --allowedTools "Read,Grep,Glob,LS,Task,TodoWrite,mcp__github_inline_comment__create_inline_comment,mcp__github_comment__update_claude_comment,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git cat-file:*),Bash(git blame:*),Bash(git diff-tree:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*),Bash(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments:*),Bash(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions:*)"
