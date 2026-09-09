@@ -27,6 +27,13 @@ jobs:
       pull-requests: write
       issues: write
       id-token: write # the action mints its App token via OIDC; without this it dies early
+      # actions: read lets the bundled github_ci MCP server read workflow runs and check
+      # results. Without it every review logged "The github_ci MCP server requires
+      # 'actions: read' permission. Skipping CI server installation." and reviewed blind —
+      # unable to say whether the suite was green on the SHA it was reviewing. Read-only:
+      # it cannot dispatch, cancel or re-run anything. The CALLER must grant it too, since
+      # the caller's permissions are the ceiling for the token passed in here.
+      actions: read
     steps:
       - uses: actions/checkout@v6
         with:
