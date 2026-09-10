@@ -177,6 +177,22 @@ jobs:
           # the reaction removal that has since been dropped). The review fans out to
           # several subagents before it posts anything; 60 leaves headroom so a slow
           # PR reports its findings instead of dying silently with them.
+          # `Skill` leads the allowlist below, and it is load-bearing. The prompt
+          # opens with `/code-review:code-review …`, and Claude Code now routes a
+          # plugin slash command through the Skill tool. Without Skill on the
+          # allowlist that invocation is DENIED, the plugin's review procedure never
+          # runs, and the model improvises — inventing the very labels this prompt
+          # forbids by name.
+          #
+          # Evidence, FB-QA/bbbk. Run 34405828482 (09-09): 49 turns, 5 denials, never
+          # touched the Skill tool, findings in the required
+          # `**P1 · headline** — file:line` shape. Run 34455461499 (09-10): same model,
+          # same prompt, same plugin — denied Skill twice, gave up after 15 turns with
+          # 30 denials, and posted six comments labelled "Correctness:",
+          # "Simplification:" and "Reuse:". Of the 62 inline comments this bot has ever
+          # left, 56 use the P-format; the 6 that do not are all from that one run.
+          #
+          # Nothing in these repositories changed. The routing of slash commands did.
           claude_args: >-
             --max-turns 60
-            --allowedTools "Read,Grep,Glob,LS,Task,TodoWrite,mcp__github_inline_comment__create_inline_comment,mcp__github_comment__update_claude_comment,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git cat-file:*),Bash(git blame:*),Bash(git diff-tree:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*),Bash(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments:*),Bash(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions:*)"
+            --allowedTools "Skill,Read,Grep,Glob,LS,Task,TodoWrite,mcp__github_inline_comment__create_inline_comment,mcp__github_comment__update_claude_comment,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git cat-file:*),Bash(git blame:*),Bash(git diff-tree:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*),Bash(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments:*),Bash(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions:*)"
