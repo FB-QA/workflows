@@ -140,6 +140,23 @@ jobs:
               is denied every single time. 👀 plus 👍 reads as "reviewed" perfectly
               well; the tidier single reaction is not worth the turns.
           track_progress: true
+          # DIAGNOSTIC. The action hides the SDK transcript by default, printing only
+          # "Running Claude Code via SDK (full output hidden for security)" — so when a
+          # review finishes having posted nothing, WHY is unreadable.
+          #
+          # It is not a rare case. FB-QA/bbbk #204 ran 25 turns and reported success with
+          # `permission_denials_count: 9` and no findings: it spent a third of its budget
+          # being refused and gave up, and the only visible symptom was a green check with
+          # nothing behind it. An entry in --allowedTools is necessary but not sufficient
+          # (see the note below), so knowing WHICH command was denied is the difference
+          # between fixing the allowlist and guessing at it. Run 31489080897 died the same
+          # way and cost a whole session to diagnose from the outside.
+          #
+          # The cost: the model's output — including whatever it reads from the diff —
+          # lands in the Actions log. Every repo calling this workflow is PRIVATE with
+          # trusted authors (see the injection note above), so the log is already as
+          # readable as the code it reviews.
+          show_full_output: true
           # Agent mode grants NO tools by default and nobody can approve prompts on a
           # runner. Grant READ-ONLY tools only — the reviewer reads and comments, it does
           # not change code (contents: read). git/gh are per-subcommand, never wildcarded
