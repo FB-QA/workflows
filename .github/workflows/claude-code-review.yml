@@ -119,6 +119,26 @@ jobs:
               lint and test gates run separately in ci.yml; read its result rather than
               reproducing it.
 
+            - DO THE REVIEW YOURSELF, IN THIS TURN. Do NOT delegate to a subagent —
+              not for the summary, not for a compliance pass, not for a bug scan,
+              not to validate a finding. The plugin's procedure describes launching
+              agents in parallel; here that instruction is overruled.
+
+              WHY, because the failure is invisible and you will not notice it: a
+              subagent starts in the BACKGROUND and reports back later. There is no
+              later. This is a one-shot run on a GitHub runner, and the moment your
+              turn ends the process exits and every outstanding agent is killed
+              mid-sentence. "I'll wait for the results" is not a thing you can do —
+              ending your turn IS the run ending.
+
+              Measured, FB-QA/bbbk #228, six consecutive runs: each fanned out to
+              five agents, wrote "I'll wait for the background review agents to
+              complete", ended the turn, and exited green having posted NOTHING.
+              Zero of five agents ever completed. The same workflow on a small diff,
+              where it reviewed directly without delegating, posted a full review —
+              so the delegation is the whole difference. Read the diff, form the
+              findings and post them, all before you stop.
+
             - Beyond the checklist the action maintains for you, the tracking comment
               carries ONE line: counts by severity, e.g. "3 findings — 1 P1, 2 P2."
               Plus the "Not posted" list if the cap bit. Do not restate the findings,
@@ -193,6 +213,20 @@ jobs:
           # left, 56 use the P-format; the 6 that do not are all from that one run.
           #
           # Nothing in these repositories changed. The routing of slash commands did.
+          #
+          # `Task` was REMOVED from the allowlist on 2026-09-14, and the prompt rule
+          # "DO THE REVIEW YOURSELF" is the primary fix — this is the backstop.
+          # Subagents now start in the BACKGROUND and report asynchronously, which is
+          # fatal in a one-shot run: the turn ends, the process exits, the agents die
+          # unfinished. FB-QA/bbbk #228 spent six runs and about eight dollars fanning
+          # out to five agents and posting nothing at all, every run green.
+          #
+          # Honest about the mechanism: it is not certain the spawn is gated by this
+          # entry (the SDK lists the tool as `Task`, the model invokes it as `Agent`).
+          # If it is gated, delegation is now impossible; if it is not, the prompt
+          # rule still stands alone and this entry was unused either way — nothing
+          # else in the prompt delegates. Removing it costs nothing and may cost the
+          # model a few denied turns, which is cheaper than a review that never lands.
           claude_args: >-
             --max-turns 60
-            --allowedTools "Skill,Read,Grep,Glob,LS,Task,TodoWrite,mcp__github_inline_comment__create_inline_comment,mcp__github_comment__update_claude_comment,Bash(git fetch:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git cat-file:*),Bash(git blame:*),Bash(git diff-tree:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*),Bash(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments:*),Bash(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions:*)"
+            --allowedTools "Skill,Read,Grep,Glob,LS,TodoWrite,mcp__github_inline_comment__create_inline_comment,mcp__github_comment__update_claude_comment,Bash(git fetch:*),Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git status:*),Bash(git rev-parse:*),Bash(git rev-list:*),Bash(git ls-files:*),Bash(git ls-tree:*),Bash(git cat-file:*),Bash(git blame:*),Bash(git diff-tree:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*),Bash(gh issue view:*),Bash(gh issue list:*),Bash(gh search:*),Bash(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/comments:*),Bash(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/reactions:*)"

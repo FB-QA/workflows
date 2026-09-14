@@ -133,6 +133,25 @@ def main() -> int:
     check("pulls/" in prompt and "comments" in prompt,
           "the dedupe step (read existing claude[bot] inline comments) is missing")
 
+    # 3. The no-delegation rule, and its backstop. A subagent starts in the
+    # BACKGROUND and reports asynchronously; a one-shot runner has no "later", so
+    # ending the turn kills every outstanding agent and the review posts nothing.
+    # FB-QA/bbbk #228 died this way six runs in a row, green every time, zero of
+    # five agents ever completing. The prompt rule is the fix; the missing `Task`
+    # entry is the backstop. Both are checked because the failure is SILENT —
+    # delete either and the next big PR reviews itself into the void.
+    check(re.search(r"Do NOT delegate to a subagent", prompt) is not None,
+          "the no-delegation rule is missing from the prompt — the reviewer will "
+          "fan out to background agents, end its turn, and post nothing")
+    check(re.search(r"\bBACKGROUND\b", prompt) is not None,
+          "the prompt no longer explains WHY delegation fails (agents run in the "
+          "background and die when the turn ends) — without the reason the rule "
+          "reads as arbitrary and gets ignored on a big diff")
+    check("Task" not in re.search(r'--allowedTools\s+"([^"]*)"', source).group(1)
+          if re.search(r'--allowedTools\s+"([^"]*)"', source) else True,
+          "`Task` is back in --allowedTools — that is the subagent-spawn grant, and "
+          "the reviewer must not be able to delegate in a one-shot run")
+
     for failure in failures:
         print(f"FAIL: {failure}", file=sys.stderr)
     if failures:
